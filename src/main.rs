@@ -1,12 +1,15 @@
-use std::io;
+use std::{io, thread, time::Duration};
 
+use audio::Controls;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use dummy::dummy;
 use ratatui::{
     prelude::*,
     symbols::border,
     widgets::{block::*, *},
 };
-
+mod dummy;
+mod audio;
 mod tui;
 mod errors;
 use color_eyre::{
@@ -14,12 +17,22 @@ use color_eyre::{
     Result,
 };
 
-#[derive(Debug, Default)]
+// #[derive(Default)]
 pub struct App {
     counter: u8,
     exit: bool,
+    controls: Controls
 }
 impl App {
+
+    pub fn new(controls: Controls) -> App {
+        App {
+            counter: 0,
+            exit: false,
+            controls
+        }
+    }
+
     /// runs the application's main loop until the user quits
     pub fn run(&mut self, terminal: &mut tui::Tui) -> Result<()> {
         while !self.exit {
@@ -54,6 +67,9 @@ impl App {
             KeyCode::Char('q') => self.exit(),
             KeyCode::Left => self.decrement_counter(),  //next song, previous song, play, pause
             KeyCode::Right => self.increment_counter(), //
+            KeyCode::Up => self.play(),
+            KeyCode::Down => self.pause(),
+            // KeyCode::Char('k') => self.start(),
             _ => {}
         }
     }
@@ -69,23 +85,33 @@ impl App {
     fn decrement_counter(&mut self) {
         self.counter -= 1;
     }
+
+    fn play(&self) {
+        self.controls.sink.play();
+    }
+
+    fn pause(&self) {
+        self.controls.sink.pause();
+    }
+
+   
 }
 
 
 
 
 
-/// drawing the UI of rumi
+/// drawing the UI of rumi /// boilerplate
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let title = Title::from(" Counter App Tutorial ".bold());
         let instructions = Title::from(Line::from(vec![
-            " Decrement ".into(),
-            "<Left>".blue().bold(),
-            " Increment ".into(),
-            "<Right>".blue().bold(),
-            " Quit ".into(),
-            "<Q> ".blue().bold(),
+            // " Decrement ".into(),
+            // "<Left>".blue().bold(),
+            // " Increment ".into(),
+            // "<Right>".blue().bold(),
+            // " Quit ".into(),
+            // "<Q> ".blue().bold(),
         ]));
         let block = Block::default()
             .title(title.alignment(Alignment::Center))
@@ -112,10 +138,23 @@ impl Widget for &App {
 
 fn main() -> Result<()> {
     errors::install_hooks()?;
+    let controls = Controls::new();
     let mut terminal = tui::init()?;
-    let app_result = App::default().run(&mut terminal);
+    let app_result = App::new(controls).run(&mut terminal);
+    // audio::awedio();
     tui::restore()?;
     app_result
 
 
 }
+
+// fn main(){
+
+//     let controls = Controls::new();
+//     controls.sink.play();
+//     thread::sleep(Duration::new(5, 0)); 
+//     controls.sink.pause();
+//     //
+//    // dummy();
+
+// }
