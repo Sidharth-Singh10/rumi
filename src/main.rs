@@ -1,35 +1,28 @@
-use std::{io, thread, time::Duration};
-
 use audio::Controls;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
-use dummy::dummy;
 use ratatui::{
     prelude::*,
     symbols::border,
     widgets::{block::*, *},
 };
-mod dummy;
+use std::io;
 mod audio;
-mod tui;
 mod errors;
-use color_eyre::{
-    eyre:: WrapErr,
-    Result,
-};
+mod tui;
+use color_eyre::{eyre::WrapErr, Result};
 
 // #[derive(Default)]
 pub struct App {
-    counter: u8,
+    current: usize,
     exit: bool,
-    controls: Controls
+    controls: Controls,
 }
 impl App {
-
     pub fn new(controls: Controls) -> App {
         App {
-            counter: 0,
+            current: 0,
             exit: false,
-            controls
+            controls,
         }
     }
 
@@ -37,12 +30,12 @@ impl App {
     pub fn run(&mut self, terminal: &mut tui::Tui) -> Result<()> {
         while !self.exit {
             terminal.draw(|frame| self.render_frame(frame))?;
-            self.handle_events().wrap_err("handle events failed")?;        }
+            self.handle_events().wrap_err("handle events failed")?;
+        }
         Ok(())
     }
 
     fn render_frame(&self, frame: &mut Frame) {
-
         // todo!()
         frame.render_widget(self, frame.size());
     }
@@ -59,17 +52,14 @@ impl App {
         Ok(())
     }
 
-
-    // control audio through here 
-    fn handle_key_event(&mut self, key_event: KeyEvent)  {
-        
+    // control audio through here
+    fn handle_key_event(&mut self, key_event: KeyEvent) {
         match key_event.code {
-            KeyCode::Char('q') => self.exit(),
-            KeyCode::Left => self.decrement_counter(),  //next song, previous song, play, pause
-            KeyCode::Right => self.increment_counter(), //
-            KeyCode::Up => self.play(),
-            KeyCode::Down => self.pause(),
-            // KeyCode::Char('k') => self.start(),
+            KeyCode::Char('q') => self.exit(), //
+            KeyCode::Char('p') => self.play_pause(),
+            KeyCode::Char('n') => self.next(),
+            KeyCode::Char('m') => self.previous(),
+            KeyCode::Char('s') => self.start(),
             _ => {}
         }
     }
@@ -78,83 +68,112 @@ impl App {
         self.exit = true;
     }
 
-    fn increment_counter(&mut self) {
-        self.counter += 1;
+    fn play_pause(&self) {
+        if self.controls.sink.is_paused() {
+            self.controls.sink.play();
+        } else {
+            self.controls.sink.pause();
+        }
+    }
+    fn next(&mut self) {
+        self.current += 1;
+        if self.current >= self.controls.playlistz.len() {
+            self.current = 0;
+        }
+        self.start();
+    }
+    fn previous(&mut self) {
+        if self.current == 0 {
+            self.current = self.controls.playlistz.len() - 1;
+        } else {
+            self.current -= 1;
+        }
+
+        self.start();
     }
 
-    fn decrement_counter(&mut self) {
-        self.counter -= 1;
-    }
-
-    fn play(&self) {
+    fn start(&self) {
+        let path = self.controls.playlistz[self.current].clone();
+        let source = Controls::get_source(path);
+        self.controls.sink.clear();
+        self.controls.sink.append(source);
         self.controls.sink.play();
+      
     }
-
-    fn pause(&self) {
-        self.controls.sink.pause();
-    }
-
-   
 }
-
-
-
-
 
 /// drawing the UI of rumi /// boilerplate
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let title = Title::from(" Counter App Tutorial ".bold());
         let instructions = Title::from(Line::from(vec![
-            // " Decrement ".into(),
-            // "<Left>".blue().bold(),
-            // " Increment ".into(),
-            // "<Right>".blue().bold(),
-            // " Quit ".into(),
-            // "<Q> ".blue().bold(),
+            " Decrement ".into(),
+            "<Left>".blue().bold(),
+            " Increment ".into(),
+            "<Right>".blue().bold(),
+            " Quit ".into(),
+            "<Q> ".blue().bold(),
         ]));
-        let block = Block::default()
-            .title(title.alignment(Alignment::Center))
-            .title(
-                instructions
-                    .alignment(Alignment::Center)
-                    .position(Position::Bottom),
-            )
-            .borders(Borders::ALL)
-            .border_set(border::THICK);
 
-        let counter_text = Text::from(vec![Line::from(vec![
-            "Value: ".into(),
-            self.counter.to_string().yellow(),
-        ])]);
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(25), Constraint::Percentage(75)])
+            .split(area);
 
-        Paragraph::new(counter_text)
-            .centered()
-            .block(block)
-            .render(area, buf);
+        let title_block = Block::default()
+            .borders(Borders::NONE)
+            .style(Style::default());
+        let title_block2 = Block::default()
+            .borders(Borders::LEFT)
+            .style(Style::default());
+
+        Paragraph::new(" Counter App Tutorial ".bold())
+            .block(title_block)
+            .render(chunks[0], buf);
+
+            let mut state = ListState::default();
+
+           let list = List::new(self.controls.songlist.clone())
+            .block(Block::default().title("List").borders(Borders::ALL))
+            .highlight_style(Style::new().add_modifier(Modifier::REVERSED))
+            .highlight_symbol(">>")
+            .repeat_highlight_symbol(true).block(title_block2);
+
+            ratatui::widgets::StatefulWidget::render(list, chunks[1], buf, &mut state);
+           
+
+
+        // Paragraph::new(" Laude ".bold())
+        //     .block(title_block2)
+        //     .render(chunks[1], buf);
+
+        // let block = Block::default()
+        //     .title(title.alignment(Alignment::Center))
+        //     .title(
+        //         instructions
+        //             .alignment(Alignment::Center)
+        //             .position(Position::Bottom),
+        //     )
+        //     .borders(Borders::ALL)
+        //     .border_set(border::THICK);
+
+        // let counter_text = Text::from(vec![Line::from(vec![
+        //     "Value: ".into(),
+        //     self.current.to_string().yellow(),
+        // ])]);
+
+        // Paragraph::new(counter_text)
+        //     .centered()
+        //     .block(block)
+        //     .render(area, buf);
+
     }
 }
-
 
 fn main() -> Result<()> {
     errors::install_hooks()?;
     let controls = Controls::new();
     let mut terminal = tui::init()?;
     let app_result = App::new(controls).run(&mut terminal);
-    // audio::awedio();
     tui::restore()?;
     app_result
-
-
 }
-
-// fn main(){
-
-//     let controls = Controls::new();
-//     controls.sink.play();
-//     thread::sleep(Duration::new(5, 0)); 
-//     controls.sink.pause();
-//     //
-//    // dummy();
-
-// }
