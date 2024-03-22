@@ -14,6 +14,7 @@ use color_eyre::{eyre::WrapErr, Result};
 pub struct StatefulList<T> {
     pub state: ListState,
     pub items: Vec<T>,
+    current:usize,
 }
 
 impl<T> StatefulList<T> {
@@ -21,44 +22,21 @@ impl<T> StatefulList<T> {
         StatefulList {
             state: ListState::default(),
             items,
+            current:0
         }
     }
 
-    pub fn next(&mut self) {
-        let i = match self.state.selected() {
-            Some(i) => {
-                if i >= self.items.len() - 1 {
-                    0
-                } else {
-                    i + 1
-                }
-            }
-            None => 0,
-        };
-        self.state.select(Some(i));
+    pub fn select_item(&mut self){
+        self.state.select(Some(self.current));
     }
 
-    pub fn previous(&mut self) {
-        let i = match self.state.selected() {
-            Some(i) => {
-                if i == 0 {
-                    self.items.len() - 1
-                } else {
-                    i - 1
-                }
-            }
-            None => 0,
-        };
-        self.state.select(Some(i));
-    }
-
-    pub fn unselect(&mut self) {
-        self.state.select(None);
-    }
+   
+    // pub fn unselect(&mut self) {
+    //     self.state.select(None);
+    // }
 }
 
 pub struct App {
-    current: usize,
     exit: bool,
     controls: Controls,
     items: StatefulList<String>,
@@ -68,7 +46,6 @@ impl App {
     pub fn new(controls: Controls) -> App {
         let songlist = controls.songlist.clone();
         App {
-            current: 0,
             exit: false,
             controls,
             items: StatefulList::with_items(songlist),
@@ -100,11 +77,11 @@ impl App {
         match key_event.code {
             KeyCode::Char('q') => self.exit(), //
             KeyCode::Char('p') => self.play_pause(),
-            KeyCode::Char('n') => self.next(),
-            KeyCode::Char('m') => self.previous(),
-            KeyCode::Char('s') => self.start(),
+            KeyCode::Char('n') => {self.next(); self.items.select_item()},
+            KeyCode::Char('m') => {self.previous(); self.items.select_item()},
+            KeyCode::Char('s') => {self.previous(); self.items.select_item()},
             // KeyCode::Left | KeyCode::Char('h') => self.app_list.items.unselect(),
-            KeyCode::Down | KeyCode::Char('j') => self.items.next(),
+            // KeyCode::Down | KeyCode::Char('j') => self.items.next(),
             // KeyCode::Up | KeyCode::Char('k') => self.app_list.items.previous(),
             _ => {}
         }
@@ -122,24 +99,24 @@ impl App {
         }
     }
     fn next(&mut self) {
-        self.current += 1;
-        if self.current >= self.controls.playlistz.len() {
-            self.current = 0;
+        self.items.current += 1;
+        if self.items.current >= self.controls.playlistz.len() {
+            self.items.current = 0;
         }
         self.start();
     }
     fn previous(&mut self) {
-        if self.current == 0 {
-            self.current = self.controls.playlistz.len() - 1;
+        if self.items.current == 0 {
+            self.items.current = self.controls.playlistz.len() - 1;
         } else {
-            self.current -= 1;
+            self.items.current -= 1;
         }
 
         self.start();
     }
 
     fn start(&self) {
-        let path = self.controls.playlistz[self.current].clone();
+        let path = self.controls.playlistz[self.items.current].clone();
         let source = Controls::get_source(path);
         self.controls.sink.clear();
         self.controls.sink.append(source);
@@ -155,7 +132,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         .split(f.size());
 
     let title_block = Block::default()
-        .borders(Borders::NONE)
+        .borders(Borders::RIGHT)
         .style(Style::default());
 
     let title = Paragraph::new(" RUMI: A rusty music player  ".bold().red()).block(title_block);
@@ -171,7 +148,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         .collect();
 
     let items_list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("List"))
+        .block(Block::default().borders(Borders::TOP).title("PlayList"))
         .highlight_style(
             Style::default()
                 .bg(Color::LightGreen)
