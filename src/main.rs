@@ -2,7 +2,6 @@ use audio::Controls;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     prelude::*,
-    symbols::border,
     widgets::{block::*, *},
 };
 use std::io;
@@ -12,34 +11,78 @@ mod tui;
 use color_eyre::{eyre::WrapErr, Result};
 
 // #[derive(Default)]
+pub struct StatefulList<T> {
+    pub state: ListState,
+    pub items: Vec<T>,
+}
+
+impl<T> StatefulList<T> {
+    pub fn with_items(items: Vec<T>) -> StatefulList<T> {
+        StatefulList {
+            state: ListState::default(),
+            items,
+        }
+    }
+
+    pub fn next(&mut self) {
+        let i = match self.state.selected() {
+            Some(i) => {
+                if i >= self.items.len() - 1 {
+                    0
+                } else {
+                    i + 1
+                }
+            }
+            None => 0,
+        };
+        self.state.select(Some(i));
+    }
+
+    pub fn previous(&mut self) {
+        let i = match self.state.selected() {
+            Some(i) => {
+                if i == 0 {
+                    self.items.len() - 1
+                } else {
+                    i - 1
+                }
+            }
+            None => 0,
+        };
+        self.state.select(Some(i));
+    }
+
+    pub fn unselect(&mut self) {
+        self.state.select(None);
+    }
+}
+
 pub struct App {
     current: usize,
     exit: bool,
     controls: Controls,
+    items: StatefulList<String>,
 }
+
 impl App {
     pub fn new(controls: Controls) -> App {
+        let songlist = controls.songlist.clone();
         App {
             current: 0,
             exit: false,
             controls,
+            items: StatefulList::with_items(songlist),
         }
     }
 
     /// runs the application's main loop until the user quits
     pub fn run(&mut self, terminal: &mut tui::Tui) -> Result<()> {
         while !self.exit {
-            terminal.draw(|frame| self.render_frame(frame))?;
+            terminal.draw(|frame| ui(frame, self))?;
             self.handle_events().wrap_err("handle events failed")?;
         }
         Ok(())
     }
-
-    fn render_frame(&self, frame: &mut Frame) {
-        // todo!()
-        frame.render_widget(self, frame.size());
-    }
-
     fn handle_events(&mut self) -> io::Result<()> {
         match event::read()? {
             // it's important to check that the event is a key press event as
@@ -60,6 +103,9 @@ impl App {
             KeyCode::Char('n') => self.next(),
             KeyCode::Char('m') => self.previous(),
             KeyCode::Char('s') => self.start(),
+            // KeyCode::Left | KeyCode::Char('h') => self.app_list.items.unselect(),
+            KeyCode::Down | KeyCode::Char('j') => self.items.next(),
+            // KeyCode::Up | KeyCode::Char('k') => self.app_list.items.previous(),
             _ => {}
         }
     }
@@ -98,80 +144,48 @@ impl App {
         self.controls.sink.clear();
         self.controls.sink.append(source);
         self.controls.sink.play();
-      
     }
+    
 }
 
-/// drawing the UI of rumi /// boilerplate
-impl Widget for &App {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        let instructions = Title::from(Line::from(vec![
-            " Decrement ".into(),
-            "<Left>".blue().bold(),
-            " Increment ".into(),
-            "<Right>".blue().bold(),
-            " Quit ".into(),
-            "<Q> ".blue().bold(),
-        ]));
+fn ui(f: &mut Frame, app: &mut App) {
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(25), Constraint::Percentage(75)])
+        .split(f.size());
 
-        let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(25), Constraint::Percentage(75)])
-            .split(area);
+    let title_block = Block::default()
+        .borders(Borders::NONE)
+        .style(Style::default());
 
-        let title_block = Block::default()
-            .borders(Borders::NONE)
-            .style(Style::default());
-        let title_block2 = Block::default()
-            .borders(Borders::LEFT)
-            .style(Style::default());
+    let title = Paragraph::new(" RUMI: A rusty music player  ".bold().red()).block(title_block);
 
-        Paragraph::new(" Counter App Tutorial ".bold())
-            .block(title_block)
-            .render(chunks[0], buf);
+    f.render_widget(title, chunks[0]);
 
-            let mut state = ListState::default();
+    let items: Vec<ListItem> = app
+        .items
+        .items
+        .clone()
+        .into_iter()
+        .map(|i| ListItem::new(i).style(Style::default().fg(Color::Black).bg(Color::White)))
+        .collect();
 
-           let list = List::new(self.controls.songlist.clone())
-            .block(Block::default().title("List").borders(Borders::ALL))
-            .highlight_style(Style::new().add_modifier(Modifier::REVERSED))
-            .highlight_symbol(">>")
-            .repeat_highlight_symbol(true).block(title_block2);
+    let items_list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title("List"))
+        .highlight_style(
+            Style::default()
+                .bg(Color::LightGreen)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol(">> ");
 
-            ratatui::widgets::StatefulWidget::render(list, chunks[1], buf, &mut state);
-           
-
-
-        // Paragraph::new(" Laude ".bold())
-        //     .block(title_block2)
-        //     .render(chunks[1], buf);
-
-        // let block = Block::default()
-        //     .title(title.alignment(Alignment::Center))
-        //     .title(
-        //         instructions
-        //             .alignment(Alignment::Center)
-        //             .position(Position::Bottom),
-        //     )
-        //     .borders(Borders::ALL)
-        //     .border_set(border::THICK);
-
-        // let counter_text = Text::from(vec![Line::from(vec![
-        //     "Value: ".into(),
-        //     self.current.to_string().yellow(),
-        // ])]);
-
-        // Paragraph::new(counter_text)
-        //     .centered()
-        //     .block(block)
-        //     .render(area, buf);
-
-    }
+    f.render_stateful_widget(items_list, chunks[1], &mut app.items.state)
 }
 
 fn main() -> Result<()> {
     errors::install_hooks()?;
     let controls = Controls::new();
+    // let app_list = list::App_list::new(controls.songlist.clone());
     let mut terminal = tui::init()?;
     let app_result = App::new(controls).run(&mut terminal);
     tui::restore()?;
