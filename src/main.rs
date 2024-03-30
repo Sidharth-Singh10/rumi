@@ -1,20 +1,25 @@
 use audio::Controls;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+// use image::{codecs::png::FilterType, imageops::crop};
+use pictures::{display_image, extract_image};
 use ratatui::{
     prelude::*,
     widgets::{block::*, *},
 };
 use std::io;
+// use std::fs;
+use ratatui_image::{StatefulImage, protocol::StatefulProtocol};
 mod audio;
 mod errors;
 mod tui;
-use color_eyre::{eyre::WrapErr, Result};
+mod pictures;
+use color_eyre::{eyre::WrapErr, owo_colors::OwoColorize, Result};
 
 // #[derive(Default)]
 pub struct StatefulList<T> {
     pub state: ListState,
     pub items: Vec<T>,
-    current:usize,
+    current: usize,
 }
 
 impl<T> StatefulList<T> {
@@ -22,15 +27,14 @@ impl<T> StatefulList<T> {
         StatefulList {
             state: ListState::default(),
             items,
-            current:0
+            current: 0,
         }
     }
 
-    pub fn select_item(&mut self){
+    pub fn select_item(&mut self) {
         self.state.select(Some(self.current));
     }
 
-   
     // pub fn unselect(&mut self) {
     //     self.state.select(None);
     // }
@@ -40,6 +44,8 @@ pub struct App {
     exit: bool,
     controls: Controls,
     items: StatefulList<String>,
+    dis:Box<dyn StatefulProtocol>,
+    
 }
 
 impl App {
@@ -49,6 +55,7 @@ impl App {
             exit: false,
             controls,
             items: StatefulList::with_items(songlist),
+            dis:display_image("img/Titli.png".to_string()),
         }
     }
 
@@ -77,9 +84,18 @@ impl App {
         match key_event.code {
             KeyCode::Char('q') => self.exit(), //
             KeyCode::Char('p') => self.play_pause(),
-            KeyCode::Char('n') => {self.next(); self.items.select_item()},
-            KeyCode::Char('m') => {self.previous(); self.items.select_item()},
-            KeyCode::Char('s') => {self.previous(); self.items.select_item()},
+            KeyCode::Char('n') => {
+                self.next();
+                self.items.select_item()
+            }
+            KeyCode::Char('m') => {
+                self.previous();
+                self.items.select_item()
+            }
+            KeyCode::Char('s') => {
+                self.previous();
+                self.items.select_item()
+            }
             // KeyCode::Left | KeyCode::Char('h') => self.app_list.items.unselect(),
             // KeyCode::Down | KeyCode::Char('j') => self.items.next(),
             // KeyCode::Up | KeyCode::Char('k') => self.app_list.items.previous(),
@@ -122,7 +138,18 @@ impl App {
         self.controls.sink.append(source);
         self.controls.sink.play();
     }
+
+    fn metadata(&mut self){
+
+        //display image ka nautanki
+        let input_path = format!("music/{}",self.controls.songlist[self.items.current].clone());
+        let output_path = format!("img/{}",self.controls.songlist[self.items.current].clone());
+        let _ = extract_image(input_path, output_path.clone());
+        self.dis = display_image(output_path);
+        
+    }
     
+
 }
 
 fn ui(f: &mut Frame, app: &mut App) {
@@ -131,13 +158,52 @@ fn ui(f: &mut Frame, app: &mut App) {
         .constraints([Constraint::Percentage(25), Constraint::Percentage(75)])
         .split(f.size());
 
-    let title_block = Block::default()
+    let left_block = Block::default()
         .borders(Borders::RIGHT)
         .style(Style::default());
 
-    let title = Paragraph::new(" RUMI: A rusty music player  ".bold().red()).block(title_block);
+    let title_block = Block::default()
+    .borders(Borders::NONE)
+    .style(Style::default());
 
-    f.render_widget(title, chunks[0]);
+    let minichunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(10), Constraint::Percentage(90)])
+        .split(chunks[0]);
+
+    let title = Paragraph::new("RUMI: A rusty music player".bold().red()).block(title_block).alignment(Alignment::Center);
+   
+    let image = StatefulImage::new(None);
+
+
+    f.render_widget(left_block, chunks[0]);
+    f.render_widget(title, minichunks[0]);
+
+    let  info_chunk = Layout::default()
+    .direction(Direction::Vertical)
+    .constraints([Constraint::Percentage(75), Constraint::Percentage(25)])
+    .split(minichunks[1]);
+
+    let image_chunk =  Layout::default()
+    .direction(Direction::Horizontal)
+    .constraints([Constraint::Percentage(20), Constraint::Percentage(75),Constraint::Percentage(5)])
+    .split(info_chunk[0]);
+
+    let author_block = Block::default()
+    .borders(Borders::NONE)
+    .style(Style::default());
+ 
+
+     
+    let author = Paragraph::new("Artist: Bulbul".bold().white()).block(author_block).alignment(Alignment::Center);
+
+
+    f.render_widget(author, info_chunk[1]);
+
+
+
+    f.render_stateful_widget(image, image_chunk[1], &mut app.dis);
+
 
     let items: Vec<ListItem> = app
         .items
