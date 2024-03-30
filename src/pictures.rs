@@ -1,5 +1,4 @@
-use id3::Tag;
-// use ratatui_image::FilterType;
+use id3::{Tag, TagLike};
 use std::fs::File;
 use std::io::prelude::*;
 
@@ -22,7 +21,7 @@ pub fn display_image(input_path: String) -> Box<dyn StatefulProtocol> {
 
     picker.guess_protocol();
     let dyn_img = image::io::Reader::open(input_path)
-        .unwrap()
+        .unwrap_or(image::io::Reader::open("img/arch.jpg").unwrap())
         .decode()
         .unwrap();
 
@@ -32,3 +31,15 @@ pub fn display_image(input_path: String) -> Box<dyn StatefulProtocol> {
 }
 
 
+pub fn get_artist_and_album(file_path: String) -> Result<(Option<String>, Option<String>), Box<dyn std::error::Error>> {
+    // Open an MP3 file
+    let file = File::open(file_path)?;
+    let tag = Tag::read_from2(&file)?;
+
+    // Get the artist name and album name
+    let artist = tag.artist().map(|a| a.to_owned());
+    let album = tag.album().map(|a| a.to_owned());
+    
+
+    Ok((artist, album))
+}

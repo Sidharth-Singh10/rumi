@@ -1,19 +1,20 @@
 use audio::Controls;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 // use image::{codecs::png::FilterType, imageops::crop};
-use pictures::{display_image, extract_image};
+use pictures::{display_image, extract_image, get_artist_and_album};
+
 use ratatui::{
     prelude::*,
     widgets::{block::*, *},
 };
 use std::io;
 // use std::fs;
-use ratatui_image::{StatefulImage, protocol::StatefulProtocol};
+use ratatui_image::{protocol::StatefulProtocol, StatefulImage};
 mod audio;
 mod errors;
-mod tui;
 mod pictures;
-use color_eyre::{eyre::WrapErr, owo_colors::OwoColorize, Result};
+mod tui;
+use color_eyre::{eyre::WrapErr, Result};
 
 // #[derive(Default)]
 pub struct StatefulList<T> {
@@ -44,8 +45,9 @@ pub struct App {
     exit: bool,
     controls: Controls,
     items: StatefulList<String>,
-    dis:Box<dyn StatefulProtocol>,
-    
+    dis: Box<dyn StatefulProtocol>,
+    artist: String,
+    album: String,
 }
 
 impl App {
@@ -55,7 +57,9 @@ impl App {
             exit: false,
             controls,
             items: StatefulList::with_items(songlist),
-            dis:display_image("img/Titli.png".to_string()),
+            dis: display_image("img/Titli.png".to_string()),
+            artist: "Unknown".to_string(),
+            album: "Unknown".to_string(),
         }
     }
 
@@ -131,25 +135,48 @@ impl App {
         self.start();
     }
 
-    fn start(&self) {
+    fn start(&mut self) {
         let path = self.controls.playlistz[self.items.current].clone();
         let source = Controls::get_source(path);
         self.controls.sink.clear();
         self.controls.sink.append(source);
         self.controls.sink.play();
+        self.metadata();
     }
 
-    fn metadata(&mut self){
-
+    fn metadata(&mut self) {
         //display image ka nautanki
-        let input_path = format!("music/{}",self.controls.songlist[self.items.current].clone());
-        let output_path = format!("img/{}",self.controls.songlist[self.items.current].clone());
-        let _ = extract_image(input_path, output_path.clone());
-        self.dis = display_image(output_path);
-        
-    }
-    
+        let input_path = format!(
+            "music/{}",
+            self.controls.songlist[self.items.current].clone()
+        );
+        let output_path = format!("img/{}", self.controls.songlist[self.items.current].clone());
 
+        let out_to_image = output_path.replace(".mp3", ".png");
+
+        let _ = extract_image(input_path.clone(), out_to_image.clone());
+
+        self.dis = display_image(out_to_image);
+
+
+
+
+
+
+        let (artist, album) = get_artist_and_album(input_path).unwrap();
+
+        if let Some(artist) = artist {
+            self.artist = artist;
+        } else {
+            self.artist = "Unknown".to_string();
+        }
+
+        if let Some(album) = album {
+            self.album = album;
+        } else {
+            self.album = "Unknown".to_string();
+        }
+    }
 }
 
 fn ui(f: &mut Frame, app: &mut App) {
@@ -163,47 +190,50 @@ fn ui(f: &mut Frame, app: &mut App) {
         .style(Style::default());
 
     let title_block = Block::default()
-    .borders(Borders::NONE)
-    .style(Style::default());
+        .borders(Borders::NONE)
+        .style(Style::default());
 
     let minichunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Percentage(10), Constraint::Percentage(90)])
         .split(chunks[0]);
 
-    let title = Paragraph::new("RUMI: A rusty music player".bold().red()).block(title_block).alignment(Alignment::Center);
-   
-    let image = StatefulImage::new(None);
+    let title = Paragraph::new("RUMI: A rusty music player".bold().red())
+        .block(title_block)
+        .alignment(Alignment::Center);
 
+    let image = StatefulImage::new(None);
 
     f.render_widget(left_block, chunks[0]);
     f.render_widget(title, minichunks[0]);
 
-    let  info_chunk = Layout::default()
-    .direction(Direction::Vertical)
-    .constraints([Constraint::Percentage(75), Constraint::Percentage(25)])
-    .split(minichunks[1]);
+    let info_chunk = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(75), Constraint::Percentage(25)])
+        .split(minichunks[1]);
 
-    let image_chunk =  Layout::default()
-    .direction(Direction::Horizontal)
-    .constraints([Constraint::Percentage(20), Constraint::Percentage(75),Constraint::Percentage(5)])
-    .split(info_chunk[0]);
+    let image_chunk = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(info_chunk[0]);
 
     let author_block = Block::default()
-    .borders(Borders::NONE)
-    .style(Style::default());
- 
+        .borders(Borders::NONE)
+        .style(Style::default());
 
-     
-    let author = Paragraph::new("Artist: Bulbul".bold().white()).block(author_block).alignment(Alignment::Center);
+    // let author = Paragraph::new("Artist: Bulbul".bold().white()).block(author_block).alignment(Alignment::Left);
 
+    let authorf = format!("Author: {}", app.artist);
+    let albumf = format!("Album: {}", app.album);
+    let text = vec![authorf.white().bold().into(), albumf.white().bold().into()];
 
-    f.render_widget(author, info_chunk[1]);
+    let meta = Paragraph::new(text)
+        .block(author_block)
+        .alignment(Alignment::Left).wrap(Wrap { trim: true });
 
+    f.render_widget(meta, image_chunk[1]);
 
-
-    f.render_stateful_widget(image, image_chunk[1], &mut app.dis);
-
+    f.render_stateful_widget(image, image_chunk[0], &mut app.dis);
 
     let items: Vec<ListItem> = app
         .items
